@@ -1,10 +1,10 @@
 version: "3.9"
 services:
   socketmigu3ln:
-    build: ./app              # aquí debe estar tu Dockerfile de Node/TS
+    build: .
     container_name: socketmigu3ln
     environment:
       - PORT=3000
     ports:
-      - "127.0.0.1:3101:3000" # solo loopback; NO expone a Internet
+      - "127.0.0.1:3101:3000"
     restart: unless-stopped
