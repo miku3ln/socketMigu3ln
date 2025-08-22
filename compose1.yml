@@ -1,0 +1,26 @@
+services:
+  socketmigu3ln:
+    build: .
+    container_name: socketmigu3ln
+    environment:
+      - HOST=0.0.0.0        # dentro del contenedor escucha en todas las IF
+      - PORT=3000           # puerto interno del servicio Node
+      - WS_PATH=/audio
+      - AUDIO_SAMPLE_RATE=16000
+      - AUDIO_CHANNELS=1
+
+    ports:
+      - "127.0.0.1:3101:3000"   # host 3101 -> contenedor 3000 (acceso directo)
+    restart: unless-stopped
+    networks: [apps-net]
+  nginx-local:
+    image: nginx:1.25-alpine
+    container_name: nginx_local
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./dist:/usr/share/nginx/html/socketmigu3ln:ro
+    ports:
+      - "8081:80"               # prueba vía http://localhost:8081/socketMigu3ln/
+    depends_on:
+      - socketmigu3ln
+    restart: unless-stopped

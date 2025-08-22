@@ -3,14 +3,15 @@ services:
     build: .
     container_name: socketmigu3ln
     environment:
-      - HOST=0.0.0.0        # dentro del contenedor escucha en todas las IF
-      - PORT=3000           # puerto interno del servicio Node
+      - HOST=0.0.0.0
+      - PORT=3000
       - WS_PATH=/audio
       - AUDIO_SAMPLE_RATE=16000
       - AUDIO_CHANNELS=1
     ports:
-      - "127.0.0.1:3101:3000"   # host 3101 -> contenedor 3000 (acceso directo)
+      - "127.0.0.1:3101:3000"   # <— tal cual lo tienes
     restart: unless-stopped
+    networks: [apps-net]
 
   nginx-local:
     image: nginx:1.25-alpine
@@ -19,7 +20,30 @@ services:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ./dist:/usr/share/nginx/html/socketmigu3ln:ro
     ports:
-      - "8081:80"               # prueba vía http://localhost:8081/socketMigu3ln/
+      - "8081:80"
     depends_on:
       - socketmigu3ln
+      - stt          # <— añadimos dependencia de STT para que Nginx lo vea
     restart: unless-stopped
+    networks: [apps-net]
+
+  # ---------- NUEVO: servicio FastAPI (STT) ----------
+  stt:
+    build:
+      context: ./stt-service
+    container_name: stt
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+      - FASTER_WHISPER_MODEL=small
+      - FASTER_WHISPER_DEVICE=cpu
+      - STT_SERVICE_VERSION=0.1.0
+    volumes:
+      - ./stt-service/models:/models   # modelos/descargas persistentes
+      - ./stt-service/data:/data       # salidas/transcripciones persistentes
+    restart: unless-stopped
+    networks: [apps-net]
+
+networks:
+  apps-net:
+    driver: bridge

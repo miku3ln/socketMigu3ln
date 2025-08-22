@@ -1,6 +1,7 @@
 // Carga y valida variables de entorno (comentarios en español).
 import dotenv from "dotenv";
 dotenv.config();
+function num(v: string|undefined, fb: number){ const n = Number(v); return Number.isFinite(n) ? n : fb; }
 
 function toNumber(value: string | undefined, fallback: number): number {
     // Convierte a número con fallback seguro (comentarios en español).
@@ -18,5 +19,9 @@ export const env = Object.freeze({
     audioChannels: toNumber(process.env.AUDIO_CHANNELS, 1),
 
     // PCM16 = 16 bits = 2 bytes (constante) (comentarios en español).
-    bytesPerSample: 2
+    bytesPerSample: 2,
+
+    sttUrl: process.env.STT_URL ?? "http://stt:8000",
+    sttEndpoint: process.env.STT_ENDPOINT ?? "/transcribe-chunk",
+    sttDefaultLang: process.env.STT_DEFAULT_LANG ?? "es",
 });

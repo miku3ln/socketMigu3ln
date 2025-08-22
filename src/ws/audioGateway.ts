@@ -1,70 +1,81 @@
-// Gateway WebSocket: gestiona conexión, heartbeat y ACK por chunk (comentarios en español).
+// src/ws/audioGateway.ts
 import type { Server } from "http";
 import { WebSocketServer, WebSocket, RawData } from "ws";
 import { env } from "../config/env";
 import { log } from "../utils/logger";
-import { rawDataByteLength /*, debugRawData*/ } from "../utils/raw";
+import { rawDataByteLength } from "../utils/raw";
+import { bufferFromRawData } from "../utils/raw-to-buffer";   // 👈 ruta corregida
+import { rawDataToText } from "../utils/raw-to-string";       // 👈 NUEVO
 import { ConnectionContext } from "./connectionContext";
+import { SttClient } from "../stt/sttClient";
 
 type AugmentedWebSocket = WebSocket & { ctx?: ConnectionContext };
+const stt = new SttClient();
 
 export function createAudioGateway(server: Server) {
     const wss = new WebSocketServer({ server, path: env.wsPath });
 
-    // Heartbeat: cierra conexiones muertas y mantiene el canal saludable (comentarios en español).
     const HEARTBEAT_MS = 30_000;
-    const heartbeat = () => {
+    const interval = setInterval(() => {
         wss.clients.forEach((ws) => {
             const s = ws as AugmentedWebSocket;
             if (!s.ctx) s.ctx = new ConnectionContext();
-            if (!s.ctx.isAlive) {
-                s.terminate();
-                return;
-            }
+            if (!s.ctx.isAlive) { s.terminate(); return; }
             s.ctx.isAlive = false;
-            s.ping(); // el cliente debe responder con 'pong'
+            s.ping();
         });
-    };
-    const interval = setInterval(heartbeat, HEARTBEAT_MS);
+    }, HEARTBEAT_MS);
 
     wss.on("connection", (ws: AugmentedWebSocket) => {
         ws.ctx = new ConnectionContext();
         log.info("Client connected");
 
-        ws.on("pong", () => {
-            // Marca conexión viva cuando llega 'pong' (comentarios en español).
-            if (ws.ctx) ws.ctx.isAlive = true;
-        });
+        ws.on("pong", () => { if (ws.ctx) ws.ctx.isAlive = true; });
 
-        ws.on("message", (data: RawData, isBinary: boolean) => {
-            // debugRawData(data); // Útil si quieres inspeccionar el tipo real (comentarios en español).
-
-            if (isBinary && ws.ctx) {
-                // Chunk de audio binario → responde ACK con longitudes (comentarios en español).
-                const chunkBytes = rawDataByteLength(data);
-                const ack = ws.ctx.ackPayload(chunkBytes);
-
-                // Incluye metadata de audio para el cliente (comentarios en español).
-                const payload = {
-                    ...ack,
-                    audio: {
-                        sampleRate: env.audioSampleRate,
-                        channels: env.audioChannels,
-                        bytesPerSample: env.bytesPerSample,
-                    },
-                };
-
-                ws.send(JSON.stringify(payload));
-                return;
-            }
-
-            // Mensajes de texto/control (opcional) (comentarios en español).
-            if (typeof data === "string") {
-                if (data === "ping") {
-                    ws.send("pong");
+        ws.on("message", async (data: RawData, isBinary: boolean) => {
+            // ✅ Trata comandos de texto con helper (sin usar 'data' como string)
+            if (!isBinary) {
+                const text = rawDataToText(data);
+                if (text === "ping") { ws.send("pong"); return; }
+                if (text.startsWith("lang:") && ws.ctx) {
+                    const lang = text.split(":")[1]?.trim();
+                    if (lang) ws.ctx.language = lang;
+                    ws.send(JSON.stringify({ type: "lang", ok: true, language: ws.ctx.language }));
                     return;
                 }
-                // try { const msg = JSON.parse(data); /* ... */ } catch { /* noop */ }
+                return; // otros textos ignorados
+            }
+
+            // 🔊 Binario: audio
+            if (ws.ctx) {
+                const buf = bufferFromRawData(data);
+                const chunkBytes = buf.length || rawDataByteLength(data);
+                const ack = ws.ctx.ackPayload(chunkBytes);
+
+                try {
+                    const sttRes = await stt.transcribeChunk(buf, ws.ctx.language, env.audioSampleRate);
+                    const payload = {
+                        ...ack,
+                        stt: { text: sttRes.text, lang: sttRes.lang, time_s: sttRes.time_s },
+                        audio: {
+                            sampleRate: env.audioSampleRate,
+                            channels: env.audioChannels,
+                            bytesPerSample: env.bytesPerSample,
+                        },
+                    };
+                    ws.send(JSON.stringify(payload));
+                } catch (e: any) {
+                    const payload = {
+                        ...ack,
+                        sttError: String(e?.message ?? e),
+                        audio: {
+                            sampleRate: env.audioSampleRate,
+                            channels: env.audioChannels,
+                            bytesPerSample: env.bytesPerSample,
+                        },
+                    };
+                    ws.send(JSON.stringify(payload));
+                }
             }
         });
 
@@ -73,16 +84,14 @@ export function createAudioGateway(server: Server) {
                 totalBytes: ws.ctx?.totalBytes,
                 chunks: ws.ctx?.chunks,
                 totalDurationMs: ws.ctx?.totalDurationMs,
+                language: ws.ctx?.language,
             });
         });
 
-        ws.on("error", (err) => {
-            log.error("WS error:", err);
-        });
+        ws.on("error", (err) => log.error("WS error:", err));
     });
 
     wss.on("close", () => clearInterval(interval));
-
     log.info(`WebSocket ready at path ${env.wsPath}`);
     return wss;
 }
