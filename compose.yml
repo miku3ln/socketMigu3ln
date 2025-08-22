@@ -41,6 +41,8 @@ services:
     volumes:
       - ./stt-service/models:/models   # modelos/descargas persistentes
       - ./stt-service/data:/data       # salidas/transcripciones persistentes
+    ports:
+      - "127.0.0.1:8101:8000"
     restart: unless-stopped
     networks: [apps-net]
 
