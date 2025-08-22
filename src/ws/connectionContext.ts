@@ -23,6 +23,7 @@ export class ConnectionContext {
         this.totalDurationMs += chunkDurationMs;
 
         return {
+            textConvert: "",
             type: "ack" as const,
             chunkBytes,
             chunkDurationMs,

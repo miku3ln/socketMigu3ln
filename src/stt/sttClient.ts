@@ -3,9 +3,9 @@ import { env } from "../config/env";
 export type SttResponse = {
     text: string;
     lang: string;
-    duration_s: number;
-    time_s: number;
-    model: string;
+    time_s?: number;
+    duration_s?: number;
+    model?: string;
 };
 
 export class SttClient {
